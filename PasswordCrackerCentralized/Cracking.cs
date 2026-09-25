@@ -1,10 +1,13 @@
-﻿using System.Diagnostics;
-using PasswordCrackerCentralized.model;
+﻿using PasswordCrackerCentralized.model;
 using PasswordCrackerCentralized.util;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 
 namespace PasswordCrackerCentralized
 {
@@ -26,41 +29,82 @@ namespace PasswordCrackerCentralized
         /// <summary>
         /// Runs the password cracking algorithm
         /// </summary>
-        public void RunCracking()
+        /// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        //public void RunCracking()
+        //{
+        //    Stopwatch stopwatch = Stopwatch.StartNew();
+
+        //    List<UserInfo> userInfos =
+        //        PasswordFileHandler.ReadPasswordFile("passwords.txt");
+        //    Console.WriteLine("passwd opeend");
+
+        //    List<UserInfoClearText> result = new List<UserInfoClearText>();
+
+        //    using (FileStream fs = new FileStream("webster-dictionary.txt", FileMode.Open, FileAccess.Read))
+
+        //    using (StreamReader dictionary = new StreamReader(fs))
+                      
+        //    {
+
+        //        while (!dictionary.EndOfStream)
+        //        {
+                   
+        //            String dictionaryEntry = dictionary.ReadLine();
+        //            IEnumerable<UserInfoClearText> partialResult = CheckWordWithVariations(dictionaryEntry, userInfos);
+        //            result.AddRange(partialResult);
+        //        }
+        //    }
+        //    stopwatch.Stop();
+        //    Console.WriteLine(string.Join(", ", result));
+        //    Console.WriteLine("Out of {0} password {1} was found ", userInfos.Count, result.Count);
+        //    Console.WriteLine();
+        //    Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
+        //}
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    public void RunCracking()
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        List<UserInfo> userInfos = PasswordFileHandler.ReadPasswordFile("passwords.txt");
+        Console.WriteLine("passwd opened");
+
+        // 1. Thread-safe collection for multiple cores
+        ConcurrentBag<UserInfoClearText> result = new ConcurrentBag<UserInfoClearText>();
+
+        // 2. Load the dictionary all at once (just like you wrote!)
+        List<string> dictionary = File.ReadAllLines("webster-dictionary.txt").ToList();
+
+        // 3. Process chunks in parallel using all CPU cores
+        Parallel.ForEach(dictionary, dictionaryEntry =>
         {
-            Stopwatch stopwatch = Stopwatch.StartNew();
+            IEnumerable<UserInfoClearText> partialResult = CheckWordWithVariations(dictionaryEntry, userInfos);
 
-            List<UserInfo> userInfos =
-                PasswordFileHandler.ReadPasswordFile("passwords.txt");
-            Console.WriteLine("passwd opeend");
-
-            List<UserInfoClearText> result = new List<UserInfoClearText>();
-
-            using (FileStream fs = new FileStream("webster-dictionary.txt", FileMode.Open, FileAccess.Read))
-
-            using (StreamReader dictionary = new StreamReader(fs))
+            foreach (var item in partialResult)
             {
-                while (!dictionary.EndOfStream)
-                {
-                    String dictionaryEntry = dictionary.ReadLine();
-                    IEnumerable<UserInfoClearText> partialResult = CheckWordWithVariations(dictionaryEntry, userInfos);
-                    result.AddRange(partialResult);
-                }
+                result.Add(item);
             }
-            stopwatch.Stop();
-            Console.WriteLine(string.Join(", ", result));
-            Console.WriteLine("Out of {0} password {1} was found ", userInfos.Count, result.Count);
-            Console.WriteLine();
-            Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
-        }
+        });
 
-        /// <summary>
-        /// Generates a lot of variations, encrypts each of the and compares it to all entries in the password file
-        /// </summary>
-        /// <param name="dictionaryEntry">A single word from the dictionary</param>
-        /// <param name="userInfos">List of (username, encrypted password) pairs from the password file</param>
-        /// <returns>A list of (username, readable password) pairs. The list might be empty</returns>
-        private IEnumerable<UserInfoClearText> CheckWordWithVariations(String dictionaryEntry, List<UserInfo> userInfos)
+        stopwatch.Stop();
+
+        Console.WriteLine(string.Join(", ", result));
+        Console.WriteLine("Out of {0} passwords, {1} were found", userInfos.Count, result.Count);
+        Console.WriteLine();
+        Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
+    }
+
+
+
+
+    /// <summary>
+    /// Generates a lot of variations, encrypts each of the and compares it to all entries in the password file
+    /// </summary>
+    /// <param name="dictionaryEntry">A single word from the dictionary</param>
+    /// <param name="userInfos">List of (username, encrypted password) pairs from the password file</param>
+    /// <returns>A list of (username, readable password) pairs. The list might be empty</returns>
+    private IEnumerable<UserInfoClearText> CheckWordWithVariations(String dictionaryEntry, List<UserInfo> userInfos)
         {
             List<UserInfoClearText> result = new List<UserInfoClearText>(); //might be empty
 
@@ -118,8 +162,14 @@ namespace PasswordCrackerCentralized
             char[] charArray = possiblePassword.ToCharArray();
             byte[] passwordAsBytes = Array.ConvertAll(charArray, PasswordFileHandler.GetConverter());
 
-            byte[] encryptedPassword = _messageDigest.ComputeHash(passwordAsBytes);
+            //byte[] encryptedPassword = _messageDigest.ComputeHash(passwordAsBytes);
             //string encryptedPasswordBase64 = System.Convert.ToBase64String(encryptedPassword);
+            ///////////////////////////////////////////////////////////////////////////////////////
+            byte[] encryptedPassword;
+            using (SHA1CryptoServiceProvider sha1 = new SHA1CryptoServiceProvider())
+            {
+                encryptedPassword = sha1.ComputeHash(passwordAsBytes);
+            }
 
             List<UserInfoClearText> results = new List<UserInfoClearText>();
 
